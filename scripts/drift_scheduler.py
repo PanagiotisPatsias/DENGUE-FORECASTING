@@ -143,7 +143,7 @@ def send_drift_alert(reasons: list, metrics: dict, year: int):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Automated Drift Monitoring Scheduler",
+        description="Automated Drift Monitoring Scheduler ",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
