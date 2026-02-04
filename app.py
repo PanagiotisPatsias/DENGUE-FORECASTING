@@ -12,7 +12,6 @@ import os
 import io
 import tempfile
 from pathlib import Path
-import pickle
 
 # add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -79,15 +78,6 @@ def _read_uploaded_csv(uploaded):
     if isinstance(uploaded, (bytes, bytearray)):
         return pd.read_csv(io.BytesIO(uploaded))
     return pd.read_csv(uploaded)
-
-
-def _load_uploaded_pickle(uploaded):
-    if uploaded is None:
-        raise ValueError("Missing uploaded .pkl file")
-    try:
-        return pickle.load(uploaded)
-    except Exception as exc:
-        raise ValueError(f"Could not read uploaded .pkl: {exc}") from exc
 
 
 def prepare_training_data_from_uploads(dengue_file, sst_file):
@@ -265,7 +255,7 @@ def build_report_text(metadata, df_in, predictions, metrics=None, pipeline_summa
 
 
 def apply_fast_grid_settings(enable: bool) -> None:
-    """Shrink grid + CV splits for faster cloud runs."""
+    """Shrink grid + CV splits for faster runs."""
     # always restore defaults before applying any trimming
     Config.ENABLE_GRID_SEARCH = Config.DEFAULT_ENABLE_GRID_SEARCH
     Config.TSCV_SPLITS = Config.DEFAULT_TSCV_SPLITS
@@ -290,94 +280,6 @@ def main():
     st.markdown('<div class="main-header">Dengue Forecasting</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtext">Upload a CSV, run prediction, and download a report.</div>', unsafe_allow_html=True)
 
-    is_cloud = os.getenv("CLOUD_MODE", "").lower() in ("1", "true", "yes")
-    is_cloud = is_cloud or os.getenv("STREAMLIT_CLOUD", "").lower() in ("1", "true", "yes")
-
-    if is_cloud:
-        st.markdown("<div class='panel'>", unsafe_allow_html=True)
-        st.subheader("Cloud Mode: Predict Only")
-        st.caption("Upload 2 .pkl files and run prediction. No training is executed in cloud mode.")
-
-        uploaded_model = st.file_uploader("Upload model .pkl", type=["pkl"], key="cloud_model_upload")
-        uploaded_meta = st.file_uploader("Upload metadata .pkl (optional)", type=["pkl"], key="cloud_meta_upload")
-
-        if uploaded_model is None:
-            st.info("Upload the model .pkl to proceed.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
-
-        if st.button("Run Prediction", type="primary"):
-            with st.spinner("Running prediction..."):
-                try:
-                    model = _load_uploaded_pickle(uploaded_model)
-                    metadata = _load_uploaded_pickle(uploaded_meta) if uploaded_meta else {}
-
-                    df_base = load_training_data()
-                    feature_engineer = FeatureEngineer()
-                    df_feat, feature_cols = feature_engineer.create_features(df_base)
-
-                    forecaster = Forecaster(feature_engineer)
-                    forecast_raw, valid_features = forecaster.forecast_with_fitted_model(
-                        df_feat,
-                        feature_cols,
-                        model,
-                        forecast_year=2026,
-                        train_max_year=2025,
-                        exclude_years=[2024],
-                        feature_subset=metadata.get("features"),
-                    )
-
-                    st.success("[OK] Forecast completed.")
-                    forecast_df = forecast_raw.rename(
-                        columns={
-                            "year_quarter": "Quarter",
-                            "predicted_casos_est": "Forecast",
-                        }
-                    )
-                    st.dataframe(forecast_df, use_container_width=True)
-
-                    report_text = build_report_text(
-                        {
-                            "model_name": metadata.get("model_name", "uploaded_model"),
-                            "features": valid_features,
-                            "metrics": metadata.get("metrics", {}),
-                            "test_year": metadata.get("test_year", "N/A"),
-                            "train_years": metadata.get("train_years", []),
-                            "num_features": len(valid_features),
-                        },
-                        df_base,
-                        forecast_df["Forecast"].tolist(),
-                        metrics=None,
-                        pipeline_summary={
-                            "best_2023_name": metadata.get("model_name", "uploaded_model"),
-                            "best_2023_r2": metadata.get("metrics", {}).get("r2", 0.0),
-                            "best_2023_mae": metadata.get("metrics", {}).get("mae", 0.0),
-                            "best_2025_name": "N/A",
-                            "best_2025_r2": 0.0,
-                            "best_2025_mae": 0.0,
-                            "forecast_2026": forecast_df["Forecast"].tolist(),
-                        },
-                    )
-
-                    st.subheader("Download")
-                    st.download_button(
-                        "Download forecast_2026.csv",
-                        forecast_df.to_csv(index=False),
-                        "forecast_2026.csv",
-                        "text/csv",
-                    )
-                    st.download_button(
-                        "Download report.txt",
-                        report_text,
-                        f"prediction_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        "text/plain",
-                    )
-                except Exception as exc:
-                    st.error(f"[ERROR] Prediction failed: {exc}")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("0) Training Plan")
     st.caption("This follows src/main.py: evaluate 2023, evaluate 2025 (exclude 2024), forecast 2026.")
@@ -386,60 +288,40 @@ def main():
 
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("1) Training Data Source")
-    use_bundled = st.checkbox(
-        "Use bundled training data (recommended for Streamlit Cloud)",
-        value=True,
-        help="Loads data from the repo instead of uploads to avoid session resets.",
-    )
+    st.caption("Dengue requires: `data_iniSE`, `casos_est`. SST requires: `YR`, `MON`, `NINO1+2`, `NINO3`, `NINO3.4`, `ANOM.3`.")
+    dengue_file = st.file_uploader("Upload Dengue CSV", type=["csv"], key="dengue_file")
+    sst_file = st.file_uploader("Upload SST CSV", type=["csv"], key="sst_file")
 
-    if not use_bundled:
-        st.caption("Dengue requires: `data_iniSE`, `casos_est`. SST requires: `YR`, `MON`, `NINO1+2`, `NINO3`, `NINO3.4`, `ANOM.3`.")
-        dengue_file = st.file_uploader("Upload Dengue CSV", type=["csv"], key="dengue_file")
-        sst_file = st.file_uploader("Upload SST CSV", type=["csv"], key="sst_file")
+    # persist uploads across reruns (store bytes + temp file for stability)
+    tmp_dir = tempfile.gettempdir()
+    dengue_tmp = os.path.join(tmp_dir, "dengue_upload.csv")
+    sst_tmp = os.path.join(tmp_dir, "sst_upload.csv")
 
-        # persist uploads across reruns (store bytes + temp file for stability)
-        tmp_dir = tempfile.gettempdir()
-        dengue_tmp = os.path.join(tmp_dir, "dengue_upload.csv")
-        sst_tmp = os.path.join(tmp_dir, "sst_upload.csv")
+    if dengue_file is not None:
+        dengue_bytes = dengue_file.read()
+        st.session_state["dengue_file_cached"] = dengue_bytes
+        with open(dengue_tmp, "wb") as f:
+            f.write(dengue_bytes)
+        st.session_state["dengue_file_path"] = dengue_tmp
 
-        if dengue_file is not None:
-            dengue_bytes = dengue_file.read()
-            st.session_state["dengue_file_cached"] = dengue_bytes
-            with open(dengue_tmp, "wb") as f:
-                f.write(dengue_bytes)
-            st.session_state["dengue_file_path"] = dengue_tmp
+    if sst_file is not None:
+        sst_bytes = sst_file.read()
+        st.session_state["sst_file_cached"] = sst_bytes
+        with open(sst_tmp, "wb") as f:
+            f.write(sst_bytes)
+        st.session_state["sst_file_path"] = sst_tmp
 
-        if sst_file is not None:
-            sst_bytes = sst_file.read()
-            st.session_state["sst_file_cached"] = sst_bytes
-            with open(sst_tmp, "wb") as f:
-                f.write(sst_bytes)
-            st.session_state["sst_file_path"] = sst_tmp
-
-        dengue_file = st.session_state.get("dengue_file_cached") or st.session_state.get("dengue_file_path")
-        sst_file = st.session_state.get("sst_file_cached") or st.session_state.get("sst_file_path")
-    else:
-        dengue_file = None
-        sst_file = None
-        st.caption(f"Using bundled data files: `{Config.DENGUE_DATA_PATH}`, `{Config.SST_DATA_PATH}`.")
+    dengue_file = st.session_state.get("dengue_file_cached") or st.session_state.get("dengue_file_path")
+    sst_file = st.session_state.get("sst_file_cached") or st.session_state.get("sst_file_path")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if not use_bundled and (dengue_file is None or sst_file is None):
+    if dengue_file is None or sst_file is None:
         st.info("Upload both training files to proceed.")
         st.stop()
-
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("2) Train + Forecast (Full Pipeline)")
 
     predict_only = False
-    if use_bundled:
-        predict_only = st.checkbox(
-            "Predict-only mode (use saved baseline model)",
-            value=True if is_cloud else False,
-            help="Skips training/validation in the cloud and only runs the forecast.",
-        )
-    if is_cloud:
-        predict_only = True
 
     uploaded_model = None
     uploaded_meta = None
@@ -448,26 +330,19 @@ def main():
         uploaded_model = st.file_uploader("Upload baseline_model.pkl", type=["pkl"], key="baseline_model_upload")
         uploaded_meta = st.file_uploader("Upload baseline_metadata.json", type=["json"], key="baseline_meta_upload")
 
-    log_to_mlflow = False
-    if not is_cloud:
-        log_to_mlflow = st.checkbox(
-            "Log results to MLflow",
-            value=True,
-            help="Uses MLFLOW_TRACKING_URI if set; otherwise logs locally to ./mlruns.",
-        )
-    else:
-        st.caption("MLflow logging is disabled in cloud mode.")
+    log_to_mlflow = st.checkbox(
+        "Log results to MLflow",
+        value=True,
+        help="Uses MLFLOW_TRACKING_URI if set; otherwise logs locally to ./mlruns.",
+    )
 
     if st.button("Run Full Pipeline + Forecast", type="primary"):
         with st.spinner("Running training pipeline and generating forecast..."):
             try:
                 apply_fast_grid_settings(enable=False)
-                if use_bundled:
-                    df_base = load_training_data()
-                else:
-                    df_base = prepare_training_data_from_uploads(dengue_file, sst_file)
+                df_base = prepare_training_data_from_uploads(dengue_file, sst_file)
                 if predict_only:
-                    # Resolve models directory for cloud (repo root vs Intellishore subdir)
+                    # Resolve models directory (repo root vs Intellishore subdir)
                     temp_models_dir = None
                     if uploaded_model is not None:
                         temp_models_dir = Path(tempfile.mkdtemp(prefix="uploaded_models_"))
@@ -492,16 +367,14 @@ def main():
                     )
                     model_manager = ModelManager(models_dir=str(models_dir))
                     st.caption(f"Using models dir: `{models_dir}`")
-                    # Debug listing for cloud visibility
-                    if is_cloud:
-                        try:
-                            if models_dir.exists():
-                                files = sorted([f.name for f in models_dir.iterdir() if f.is_file()])
-                                st.write(f"[DEBUG] Files in models dir: {', '.join(files) if files else '(empty)'}")
-                            else:
-                                st.write(f"[DEBUG] Models dir missing: `{models_dir}`")
-                        except Exception as exc:
-                            st.write(f"[DEBUG] Could not list models dir: {exc}")
+                    try:
+                        if models_dir.exists():
+                            files = sorted([f.name for f in models_dir.iterdir() if f.is_file()])
+                            st.write(f"[DEBUG] Files in models dir: {', '.join(files) if files else '(empty)'}")
+                        else:
+                            st.write(f"[DEBUG] Models dir missing: `{models_dir}`")
+                    except Exception as exc:
+                        st.write(f"[DEBUG] Could not list models dir: {exc}")
                     loaded = model_manager.load_baseline_model()
                     if not loaded:
                         st.warning("[DEBUG] Baseline not found. Checked these paths:")
@@ -569,7 +442,6 @@ def main():
                     if log_to_mlflow:
                         try:
                             monitor = ModelMonitor(experiment_name="dengue_forecasting")
-                            st.caption(f"MLflow tracking URI: `{monitor.tracking_uri}`")
                             monitor.log_forecast_run(
                                 model_name=metadata["model_name"],
                                 forecast_df=forecast_df,
@@ -613,13 +485,12 @@ def main():
                     )
                     st.dataframe(forecast_df, use_container_width=True)
 
-                    if not is_cloud:
-                        st.subheader("MLflow")
-                        mlflow_url = os.getenv(
-                            "MLFLOW_UI_URL",
-                            "http://localhost:5000",
-                        )
-                        st.link_button("Open MLflow", mlflow_url)
+                    st.subheader("MLflow")
+                    mlflow_url = os.getenv(
+                        "MLFLOW_UI_URL",
+                        "http://localhost:5000",
+                    )
+                    st.link_button("Open MLflow", mlflow_url)
 
                     if log_to_mlflow:
                         try:
