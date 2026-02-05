@@ -85,7 +85,7 @@ class ModelMonitor:
 
     @staticmethod
     def _normalize_tracking_uri(tracking_uri: str) -> str:
-        """Normalize tracking URI for local usage (prefer absolute file://)."""
+        """Normalize tracking URI for local usage."""
         if not tracking_uri:
             return "./mlruns"
         if "://" in tracking_uri:

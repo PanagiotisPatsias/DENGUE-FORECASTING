@@ -3,6 +3,7 @@ visualization module for dengue forecasting results.
 handles plotting of predictions, comparisons, and trends.
 """
 
+import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from typing import Optional
@@ -24,6 +25,12 @@ class Visualizer:
         """
         self.figsize = figsize
         self.show_plots = show_plots
+        self.output_dir = os.path.join("outputs", "plots")
+    
+    def _save_fig(self, filename: str) -> None:
+        os.makedirs(self.output_dir, exist_ok=True)
+        path = os.path.join(self.output_dir, filename)
+        plt.savefig(path, dpi=150, bbox_inches="tight")
     
     def add_quarter_date(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -121,6 +128,7 @@ class Visualizer:
         ax.grid(alpha=0.3)
         plt.xticks(rotation=45)
         plt.tight_layout()
+        self._save_fig(f"actual_vs_predicted_{year}_{model_name}.png")
         if self.show_plots:
             plt.show()
         else:
@@ -210,6 +218,7 @@ class Visualizer:
         ax.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
+        self._save_fig(f"forecast_{forecast_year}_{model_name}.png")
         if self.show_plots:
             plt.show()
         else:
@@ -242,6 +251,11 @@ class Visualizer:
         ax.invert_yaxis()  # highest importance on top
         ax.grid(alpha=0.3, axis='x')
         plt.tight_layout()
+        safe_title = "".join(
+            c if c.isalnum() or c in ("-", "_") else "_"
+            for c in title.strip().lower()
+        )
+        self._save_fig(f"feature_importance_{safe_title}.png")
         if self.show_plots:
             plt.show()
         else:
@@ -270,64 +284,3 @@ class Visualizer:
                 f"{row['Importance']:.4f} {bar}"
             )
     
-    def plot_multiple_predictions(
-        self,
-        historical_df: pd.DataFrame,
-        predictions_dict: dict,
-        start_year: int = None
-    ) -> None:
-        """
-        plot multiple prediction scenarios on same chart.
-        
-        args:
-            historical_df: full historical dataframe
-            predictions_dict: dict mapping label to (dates, values) tuples
-            start_year: starting year for historical plot
-        """
-        hist_plot = self.add_quarter_date(historical_df.copy())
-        
-        if start_year:
-            hist = hist_plot[hist_plot['year'] >= start_year].copy()
-        else:
-            hist = hist_plot.copy()
-        
-        fig, ax = plt.subplots(figsize=(14, 6))
-        
-        # plot historical
-        ax.plot(
-            hist['date'],
-            hist['casos_est'],
-            color='blue',
-            linewidth=2.5,
-            label='Historical'
-        )
-        
-        # plot each prediction scenario
-        colors = ['red', 'orange', 'purple', 'green']
-        for idx, (label, (dates, values)) in enumerate(predictions_dict.items()):
-            color = colors[idx % len(colors)]
-            ax.plot(
-                dates,
-                values,
-                f'{color}--o',
-                linewidth=2,
-                markersize=6,
-                label=label
-            )
-        
-        # formatting
-        ax.set_title(
-            'Multiple Forecast Scenarios',
-            fontsize=15,
-            fontweight='bold'
-        )
-        ax.set_xlabel('Quarter')
-        ax.set_ylabel('Quarterly Cases')
-        ax.grid(alpha=0.3)
-        ax.legend()
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        if self.show_plots:
-            plt.show()
-        else:
-            plt.close()
