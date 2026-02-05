@@ -232,7 +232,7 @@ class ModelTrainer:
         results: Dict[str, Dict[str, Any]]
     ) -> Tuple[str, Dict[str, Any]]:
         """
-        get the best performing model based on r2 score.
+        get the best performing model based on MAE (lower is better).
         
         args:
             results: dictionary of model results
@@ -240,7 +240,7 @@ class ModelTrainer:
         returns:
             tuple of (best model name, best model results)
         """
-        return max(results.items(), key=lambda x: x[1]['r2'])
+        return min(results.items(), key=lambda x: x[1]['mae'])
     
     def get_feature_importance(
         self,
@@ -289,17 +289,26 @@ class ModelTrainer:
             print(description)
         print("=" * 80)
         
-        print(f"\n{'Model':<20} {'R²':>10} {'MAE':>15} {'RMSE':>15}")
-        print("-" * 60)
+        print(f"\n{'Model':<20} {'R²':>10} {'MAE':>15} {'Val MAE':>15} {'RMSE':>15}")
+        print("-" * 75)
         
         for name, res in results.items():
+            val_mae = res.get('val_mae')
+            val_mae_str = f"{val_mae:,.0f}" if val_mae is not None else "-"
             print(
                 f"{name:<20} {res['r2']:>10.4f} "
-                f"{res['mae']:>15,.0f} {res['rmse']:>15,.0f}"
+                f"{res['mae']:>15,.0f} {val_mae_str:>15} {res['rmse']:>15,.0f}"
             )
         
         best_name, best_res = self.get_best_model(results)
-        print(f"\n Best: {best_name} with R² = {best_res['r2']:.4f}")
+        best_val_mae = best_res.get('val_mae')
+        if best_val_mae is not None:
+            print(
+                f"\n Best (by MAE): {best_name} with MAE = {best_res['mae']:.0f} "
+                f"(Val MAE = {best_val_mae:.0f})"
+            )
+        else:
+            print(f"\n Best (by MAE): {best_name} with MAE = {best_res['mae']:.0f}")
     
     def print_predictions(
         self,

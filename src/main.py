@@ -98,7 +98,17 @@ class DengueForecastingPipeline:
             test_year=test_year,
             train_years=train_years
         )
-        print(f"\n Baseline model saved: {best_name} (R² = {best_res['r2']:.3f})")
+        val_mae = best_res.get("val_mae")
+        if val_mae is not None:
+            print(
+                f"\n Baseline model saved (selected by MAE): {best_name} "
+                f"(MAE = {best_res['mae']:.0f}, Val MAE = {val_mae:.0f})"
+            )
+        else:
+            print(
+                f"\n Baseline model saved (selected by MAE): {best_name} "
+                f"(MAE = {best_res['mae']:.0f})"
+            )
         
         # mlflow monitoring
         if self.enable_monitoring and self.monitor:
@@ -193,7 +203,7 @@ class DengueForecastingPipeline:
         # get best model
         best_name, best_res = self.model_trainer.get_best_model(results)
         
-        # save model with timestamp for comparison (NOT baseline - that's already set!)
+        # save model with timestamp for comparison 
         self.model_manager.save_model_with_timestamp(
             model=best_res['model'],
             model_name=best_name,
@@ -499,7 +509,6 @@ def main():
     )
     pipeline.run()
     
-    # Optionally start drift scheduler
     if args.start_scheduler:
         print("\n" + "=" * 80)
         print("STARTING DRIFT SCHEDULER")

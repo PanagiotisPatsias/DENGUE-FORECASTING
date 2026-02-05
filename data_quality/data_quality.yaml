@@ -1,0 +1,15 @@
+datasets:
+  dengue:
+    path: data/infodengue_capitals_subsetBR.csv
+    required_columns:
+      - data_iniSE
+      - casos_est
+  sst:
+    path: data/sst_indices.csv
+    required_columns:
+      - YR
+      - MON
+      - NINO1+2
+      - NINO3
+      - NINO3.4
+      - ANOM.3

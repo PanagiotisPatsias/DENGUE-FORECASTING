@@ -308,15 +308,6 @@ class ModelMonitor:
             return [self._to_json_serializable(value) for value in obj]
         return obj
     
-    # def _get_status_emoji(self, severity: str) -> str:
-    #     """Get emoji for severity level."""
-    #     return {
-    #         'CRITICAL': '[ALERT]',
-    #         'WARNING': '[WARNING]',
-    #         'OK': '[OK]',
-    #         'UNKNOWN': '[?]'
-    #     }.get(severity, '[?]')
-    
     def detect_performance_drift(
         self,
         current_metrics: Dict[str, float],
@@ -405,9 +396,7 @@ class ModelMonitor:
         test_year: int
     ) -> None:
         """Print clear, formatted drift summary to console."""
-        severity = self._get_drift_severity(current_metrics)
-        # emoji = self._get_status_emoji(severity)
-        
+        severity = self._get_drift_severity(current_metrics) 
         baseline = self.baseline_metrics['metrics']
         r2_drop = baseline['r2'] - current_metrics['r2']
         mae_pct = ((current_metrics['mae'] - baseline['mae']) / baseline['mae']) * 100
@@ -452,10 +441,6 @@ class ModelMonitor:
         rmse_increase_pct = ((current_metrics['rmse'] - baseline_metrics['rmse']) / baseline_metrics['rmse']) * 100
         
         with mlflow.start_run(run_name=f"drift_check_{test_year}") as run:
-            # =====================================================
-            # CLEAR STATUS TAGS (visible in MLflow run list)
-            # =====================================================
-            # status_emoji = self._get_status_emoji(severity)
             mlflow.set_tag("DRIFT_STATUS", f" {'RETRAIN NEEDED' if drift_detected else 'MODEL OK'}")
             mlflow.set_tag("severity", severity)
             mlflow.set_tag("run_type", "drift_check")
@@ -466,9 +451,7 @@ class ModelMonitor:
             mlflow.set_tag("r2_status", "[FAIL] FAIL" if current_metrics['r2'] < self.performance_threshold else "[OK] OK")
             mlflow.set_tag("mae_status", f"[FAIL] +{mae_increase_pct:.0f}%" if mae_increase_pct > 50 else "[OK] OK")
             
-            # =====================================================
             # KEY METRICS
-            # =====================================================
             mlflow.log_metric("drift_detected", 1.0 if drift_detected else 0.0)
             mlflow.log_metric("drift_severity_score", {'CRITICAL': 3, 'WARNING': 2, 'OK': 1, 'UNKNOWN': 0}[severity])
             mlflow.log_metric("num_drift_reasons", len(drift_reasons))
@@ -497,9 +480,8 @@ class ModelMonitor:
             mlflow.log_param("performance_threshold", self.performance_threshold)
             mlflow.log_param("baseline_year", self.baseline_metrics.get('test_year', 'N/A'))
             
-            # =====================================================
+
             # GENERATE HTML DASHBOARD
-            # =====================================================
             if self.dashboard_generator:
                 # Prepare metrics history for time series chart
                 history_data = []
@@ -534,9 +516,8 @@ class ModelMonitor:
                 mlflow.log_artifact(dashboard_path)
                 Path(dashboard_path).unlink()
             
-            # =====================================================
+
             # JSON REPORT
-            # =====================================================
             drift_report = {
                 'summary': {
                     'drift_detected': drift_detected,
@@ -648,7 +629,6 @@ class ModelMonitor:
         )
         
         severity = self._get_drift_severity(current_metrics)
-        # emoji = self._get_status_emoji(severity)
         
         report = []
         report.append("\n" + "=" * 80)
